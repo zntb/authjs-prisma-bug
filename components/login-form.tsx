@@ -1,8 +1,8 @@
 'use client';
 
-import type React from 'react';
-
-import { useState } from 'react';
+import { useState, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
+import { authenticate } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,14 +16,22 @@ import {
 } from '@/components/ui/card';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
 
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type='submit' className='w-full' aria-disabled={pending}>
+      {pending ? 'Signing in...' : 'Sign in'}
+    </Button>
+  );
+}
+
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle login logic here
-    console.log('Login submitted');
-  };
+  const [state, action] = useActionState(authenticate, {
+    success: false,
+    message: '',
+  });
 
   return (
     <Card className='w-full'>
@@ -33,12 +41,13 @@ export function LoginForm() {
           Enter your credentials to access your account
         </CardDescription>
       </CardHeader>
-      <form onSubmit={handleSubmit}>
+      <form action={action}>
         <CardContent className='space-y-4'>
           <div className='space-y-2'>
             <Label htmlFor='email'>Email</Label>
             <Input
               id='email'
+              name='email'
               type='email'
               placeholder='name@example.com'
               required
@@ -49,6 +58,7 @@ export function LoginForm() {
             <div className='relative'>
               <Input
                 id='password'
+                name='password'
                 type={showPassword ? 'text' : 'password'}
                 required
               />
@@ -88,11 +98,14 @@ export function LoginForm() {
               Forgot password?
             </Button>
           </div>
+          {state.success === false && (
+            <div className='text-sm font-medium text-destructive'>
+              {state.message}
+            </div>
+          )}
         </CardContent>
         <CardFooter>
-          <Button type='submit' className='w-full'>
-            Sign in
-          </Button>
+          <SubmitButton />
         </CardFooter>
       </form>
     </Card>

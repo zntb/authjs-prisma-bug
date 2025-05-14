@@ -1,46 +1,87 @@
 import NextAuth from 'next-auth';
+import Google from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import { compare } from 'bcryptjs';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@/lib/prisma';
-import Credentials from 'next-auth/providers/credentials';
-import { compare } from 'bcryptjs';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: 'jwt',
+  },
   providers: [
-    Credentials({
-      credentials: {
-        email: { type: 'email' },
-        password: { type: 'password' },
-      },
+    Google,
+    CredentialsProvider({
       async authorize(credentials) {
-        if (credentials == null) return null;
+        if (!credentials?.email || !credentials?.password) return null;
 
-        // Find user in database
-        const user = await prisma.user.findFirst({
-          where: {
-            email: credentials.email as string,
-          },
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email as string },
         });
 
-        // Check if user exists and if the password matches
-        if (user && user.password) {
-          const isMatch = await compare(
-            credentials.password as string,
-            user.password,
-          );
+        if (!user) return null;
 
-          // If password is correct, return user
-          if (isMatch) {
-            return {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-            };
-          }
-        }
-        // If user does not exist or password does not match return null
-        return null;
+        const isValidPassword = await compare(
+          credentials.password.toString(),
+          user.password as string,
+        );
+
+        if (!isValidPassword) return null;
+
+        return user;
       },
     }),
   ],
+  callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider !== 'credentials') return true;
+
+      if (!user.id) {
+        return false;
+      }
+
+      const existingUser = await prisma.user.findUnique({
+        where: { id: user.id },
+      });
+
+      if (!existingUser) return false;
+
+      // console.log('existingUser from auth.ts signin: ', existingUser);
+
+      return true;
+    },
+
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+      }
+
+      // console.log('token from auth.ts jwt: ', token);
+
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.name = token.name as string;
+        session.user.email = token.email as string;
+      }
+
+      // console.log('session from auth.ts session: ', session);
+
+      return session;
+    },
+
+    async redirect({ url, baseUrl }) {
+      // Allows relative callback URLs
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      // Allows callback URLs on the same origin
+      else if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
+    },
+  },
 });
